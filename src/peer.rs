@@ -105,7 +105,7 @@ impl PeerTransmitter {
         Ok(())
     }
 
-    pub fn run<'a, T>(self, data: &'a T) 
+    pub fn run<'a, T>(self, data: &'a T) -> !
         where T: serde::ser::Serialize,
     {
         loop {
@@ -142,13 +142,13 @@ impl PeerReceiver {
     pub fn receive<T>(&self) -> io::Result<T>
         where T: serde::de::Deserialize, 
     {
-        let mut buf = [0; 128];
+        let mut buf = [0u8; 256];
         let (amt, _) = try!(self.conn.recv_from(&mut buf));
         let msg = from_utf8(&buf[..amt]).unwrap();
         Ok(serde_json::from_str(&msg).unwrap())
     }
 
-    pub fn run<T>(self, update_tx: mpsc::Sender<PeerUpdate<T>>)
+    pub fn run<T>(self, update_tx: mpsc::Sender<PeerUpdate<T>>) -> !
         where T: serde::de::Deserialize + Hash + Eq + Clone + Ord,
     {
         let mut last_seen = HashMap::new();
@@ -159,8 +159,8 @@ impl PeerReceiver {
             self.conn.set_read_timeout(Some(Duration::new(0, TIMEOUT_NS))).unwrap();
             let new_id: T = match self.receive() {
                 Ok(id) => id,
-                Err(_) => {
-                    println!("PeerReceiver timed out");
+                Err(err) => {
+                    println!("Recv failed for PeerReceiver. Error: {}", err);
                     continue;
                 }
             };

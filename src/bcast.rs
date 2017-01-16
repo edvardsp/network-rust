@@ -2,9 +2,11 @@
 use std::io;
 use std::net::UdpSocket;
 use std::str::from_utf8;
+use std::sync::mpsc;
 
 use serde;
 use serde_json;
+use net2::UdpBuilder;
 
 pub struct BcastTransmitter {
     conn: UdpSocket,
@@ -13,7 +15,9 @@ pub struct BcastTransmitter {
 impl BcastTransmitter {
     pub fn new(port: u16) -> io::Result<Self> {
         let conn = {
-            let socket = try!(UdpSocket::bind(("127.0.0.1", port)));
+            let udp = try!(UdpBuilder::new_v4());
+            try!(udp.reuse_address(true));
+            let socket = try!(udp.bind("0.0.0.0:0"));
             try!(socket.set_broadcast(true));
             try!(socket.connect(("255.255.255.255", port)));
             socket
@@ -30,6 +34,15 @@ impl BcastTransmitter {
         try!(self.conn.send(serialized.as_bytes()));
         Ok(())
     }
+
+    pub fn run<T>(self, bcast_rx: mpsc::Receiver<T>) -> !
+        where T: serde::ser::Serialize,
+    {
+        loop {
+            let msg = bcast_rx.recv().unwrap();
+            self.transmit(&msg).expect("Transmission of data failed for BcastTransmitter");
+        }
+    }
 }
 
 pub struct BcastReceiver {
@@ -38,7 +51,13 @@ pub struct BcastReceiver {
 
 impl BcastReceiver {
     pub fn new(port: u16) -> io::Result<Self> {
-        let conn = try!(UdpSocket::bind(("255.255.255.255", port)));
+        let conn = {
+            let udp = try!(UdpBuilder::new_v4());
+            try!(udp.reuse_address(true));
+            let socket = try!(udp.bind(("255.255.255.255", port)));
+            try!(socket.set_broadcast(true));
+            socket
+        };
         Ok(BcastReceiver {
             conn: conn,
         })
@@ -51,6 +70,21 @@ impl BcastReceiver {
         let (amt, _) = try!(self.conn.recv_from(&mut buf));
         let msg = from_utf8(&buf[..amt]).unwrap();
         Ok(serde_json::from_str(&msg).unwrap())
+    }
+
+    pub fn run<T>(self, bcast_tx: mpsc::Sender<T>) -> !
+        where T: serde::de::Deserialize,
+    {
+        loop {
+            let msg: T = match self.receive() {
+                Ok(msg) => msg,
+                Err(err) => {
+                    println!("Recv failed for BcastReceiver. Error: {}", err);
+                    continue;
+                }
+            };
+            bcast_tx.send(msg).unwrap();
+        }
     }
 }
 
