@@ -13,7 +13,7 @@ use rand::Rng;
 use network_rust::localip::get_localip;
 use network_rust::peer::{PeerTransmitter, PeerReceiver, PeerUpdate};
 use network_rust::bcast::{BcastTransmitter, BcastReceiver};
-.unwrap()
+
 const PEER_PORT: u16 = 9877;
 const BCAST_PORT: u16 = 9876;
 
