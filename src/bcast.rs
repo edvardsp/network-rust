@@ -47,7 +47,7 @@ impl BcastReceiver {
     pub fn receive<T>(&self) -> io::Result<T> 
         where T: serde::de::Deserialize, 
     {
-        let mut buf = [0; 128];
+        let mut buf = [0u8; 1024];
         let (amt, _) = try!(self.conn.recv_from(&mut buf));
         let msg = from_utf8(&buf[..amt]).unwrap();
         Ok(serde_json::from_str(&msg).unwrap())

@@ -8,13 +8,16 @@ use std::time::{Duration, Instant};
 use std::str::from_utf8;
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::fmt;
 
 use serde;
 use serde_json;
+use net2::UdpBuilder;
 
-const INTERVAL_NS: u32 = 15_000_000; // 15 ms
+const INTERVAL_NS: u32 = 20_000_000; // 20 ms
 const TIMEOUT_NS: u32 = 100_000_000; // 100 ms
 
+#[derive(Debug)]
 pub struct PeerUpdate<T> {
     peers: Vec<T>,
     new: Option<T>,
@@ -44,22 +47,23 @@ impl<T> PeerUpdate<T>
         self.lost.push(id);
     }
 
-    pub fn sort(&mut self) {
+    fn sort(&mut self) {
         self.peers.sort();
-        self.lost.sort()
+        self.lost.sort();
     }
+}
 
-    pub fn get_peers(&self) -> &[T] {
-        &self.peers[..]
-    } 
-
-    pub fn get_new(&self) -> Option<&T> {
-        self.new.as_ref()
-    } 
-
-    pub fn get_lost(&self) -> &[T] {
-        &self.lost[..]
-    } 
+impl<T: fmt::Debug> fmt::Display for PeerUpdate<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f,
+            "Peer update:
+            Peers:  {:?}
+            New:    {:?}
+            Lost:   {:?}",
+            self.peers,
+            self.new,
+            self.lost)
+    }
 }
 
 pub struct PeerTransmitter {
@@ -70,7 +74,9 @@ pub struct PeerTransmitter {
 impl PeerTransmitter {
     pub fn new(port: u16) -> io::Result<Self> {
         let conn = {
-            let socket = try!(UdpSocket::bind(("127.0.0.1", port)));
+            let udp = try!(UdpBuilder::new_v4());
+            try!(udp.reuse_address(true));
+            let socket = try!(udp.bind("0.0.0.0:0"));
             try!(socket.set_broadcast(true));
             try!(socket.connect(("255.255.255.255", port)));
             socket
@@ -99,7 +105,7 @@ impl PeerTransmitter {
         Ok(())
     }
 
-    pub fn run<'a, T>(&self, data: &'a T) 
+    pub fn run<'a, T>(self, data: &'a T) 
         where T: serde::ser::Serialize,
     {
         loop {
@@ -121,7 +127,13 @@ pub struct PeerReceiver {
 
 impl PeerReceiver {
     pub fn new(port: u16) -> io::Result<Self> {
-        let conn = try!(UdpSocket::bind(("255.255.255.255", port)));
+        let conn = {
+            let udp = try!(UdpBuilder::new_v4());
+            try!(udp.reuse_address(true));
+            let socket = try!(udp.bind(("255.255.255.255", port)));
+            try!(socket.set_broadcast(true));
+            socket
+        };
         Ok(PeerReceiver{
             conn: conn,
         })
@@ -136,7 +148,7 @@ impl PeerReceiver {
         Ok(serde_json::from_str(&msg).unwrap())
     }
 
-    pub fn run<T>(&self, update_tx: mpsc::Sender<PeerUpdate<T>>)
+    pub fn run<T>(self, update_tx: mpsc::Sender<PeerUpdate<T>>)
         where T: serde::de::Deserialize + Hash + Eq + Clone + Ord,
     {
         let mut last_seen = HashMap::new();
@@ -163,9 +175,12 @@ impl PeerReceiver {
             // Removing dead connection
             for (id, time) in &last_seen {
                 if Instant::now().duration_since(*time) > Duration::new(0, TIMEOUT_NS) {
-                    updated = true;
                     peer_update.add_lost(id.clone());
+                    updated = true;
                 }
+            }
+            for id in &peer_update.lost {
+                last_seen.remove(id);
             }
 
             // Sending update
