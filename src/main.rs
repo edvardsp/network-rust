@@ -54,7 +54,7 @@ fn main() {
             let mut input = String::new();
             io::stdin().read_line(&mut input)
                 .expect("Couldn't read line");
-            transmit_tx.send(input).unwrap();
+            transmit_tx.send(input.trim().to_string()).unwrap();
         }
     });
 

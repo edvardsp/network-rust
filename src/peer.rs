@@ -53,16 +53,36 @@ impl<T> PeerUpdate<T>
     }
 }
 
-impl<T: fmt::Debug> fmt::Display for PeerUpdate<T> {
+impl<T: fmt::Display> fmt::Display for PeerUpdate<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,
-            "Peer update:
-            Peers:  {:?}
-            New:    {:?}
-            Lost:   {:?}",
-            self.peers,
-            self.new,
-            self.lost)
+        try!(write!(f, "Peer update:\n"));
+        match self.peers.len() {
+            0 => try!(write!(f, "\tpeers: []\n")),
+            1 => try!(write!(f, "\tpeers: [{}]\n", self.peers[0])),
+            n @ _ => {
+                try!(write!(f, "\tpeers: [{},\n", self.peers[0]));
+                for i in 1..n-1 {
+                    try!(write!(f, "\t        {},\n", self.peers[i]));
+                }
+                try!(write!(f, "\t        {}]\n", self.peers[n-1]));
+            }
+        }
+        match self.new {
+            Some(ref new) => try!(write!(f, "\tnew:   [{}]\n", new)),
+            None => try!(write!(f, "\tnew:   [None]\n"))
+        }
+        match self.lost.len() {
+            0 => try!(write!(f, "\tlost:  []\n")),
+            1 => try!(write!(f, "\tlost:  [{}]\n", self.peers[0])),
+            n @ _ => {
+                try!(write!(f, "\tlost:  [{},\n", self.peers[0]));
+                for i in 1..n-1 {
+                    try!(write!(f, "\t        {},\n", self.peers[i]));
+                }
+                try!(write!(f, "\t        {}]\n", self.peers[n-1]));
+            }
+        }
+        Ok(())
     }
 }
 
