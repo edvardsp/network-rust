@@ -177,20 +177,16 @@ impl PeerReceiver {
             let mut updated = false;
             
             self.conn.set_read_timeout(Some(Duration::new(0, TIMEOUT_NS))).unwrap();
-            let new_id: T = match self.receive() {
-                Ok(id) => id,
-                Err(err) => {
-                    println!("Recv failed for PeerReceiver. Error: {}", err);
-                    continue;
-                }
-            };
+            let new_id: Option<T> = self.receive().ok();
             
             // Adding new connection
-            if !last_seen.contains_key(&new_id) {
-                peer_update.set_new(new_id.clone());
-                updated = true;
+            if let Some(id) = new_id {
+                if !last_seen.contains_key(&id) {
+                    peer_update.set_new(id.clone());
+                    updated = true;
+                }
+                last_seen.insert(id, Instant::now());
             }
-            last_seen.insert(new_id, Instant::now());
 
             // Removing dead connection
             for (id, time) in &last_seen {
